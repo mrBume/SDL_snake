@@ -7,19 +7,19 @@
 #include <algorithm>
 #include <string>
 
-#include <SDL.h>
-#include <SDL_ttf.h>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_ttf.h>
 
 using namespace std;
 
-const int WIDTH = 420, HEIGHT = 600;
+const int WIDTH = 550, HEIGHT = 550;
 
 const int GRID_SIZE = 50;
-const int X_CELLS   = 4;
-const int Y_CELLS   = 4;
+const int X_CELLS   = 10;
+const int Y_CELLS   = 10;
 
-int gameboard_x = X_CELLS * GRID_SIZE + 1;
-int gameboard_y = Y_CELLS * GRID_SIZE + 1;
+int gameboard_x = X_CELLS * GRID_SIZE;
+int gameboard_y = Y_CELLS * GRID_SIZE;
 
 struct Vect2D
 {
@@ -75,9 +75,9 @@ void SetColorAlpha(SDL_Renderer * renderer, CustomColor color, char alpha)
 class Snake
 {
   public:
-    Snake(SDL_Renderer * render)
+    Snake(SDL_Renderer * render, SDL_Rect game_area)
     {
-      SDL_RenderGetViewport(render, &view_port);
+      view_port = game_area;
       SDL_SetRenderDrawBlendMode(render, SDL_BLENDMODE_BLEND);
       
       body.clear();
@@ -165,8 +165,8 @@ class Snake
         {
           char al = 0xFF - i * 5 < 40 ? 40 : 0xFF - i * 5 ;
           SetColorAlpha(renderer, color_pallete[2], al);
-          rect.x = body[i].x * GRID_SIZE;
-          rect.y = body[i].y * GRID_SIZE;
+          rect.x = view_port.x + body[i].x * GRID_SIZE;
+          rect.y = view_port.y + body[i].y * GRID_SIZE;
           rect.w = GRID_SIZE;
           rect.h = GRID_SIZE;
 
@@ -191,17 +191,18 @@ class Snake
 class Food
 {
   public:
-    Food(SDL_Renderer * render)
+    Food(SDL_Renderer * render, SDL_Rect game_area)
     {
       renderer = render;
+      view_port = game_area;
       GenRandom();
     };
 
     void Draw()
     {
       SDL_Rect rect;
-      rect.x = pos.x * GRID_SIZE;
-      rect.y = pos.y * GRID_SIZE;
+      rect.x = view_port.x + pos.x * GRID_SIZE;
+      rect.y = view_port.y + pos.y * GRID_SIZE;
       rect.w = GRID_SIZE;
       rect.h = GRID_SIZE;
 
@@ -231,6 +232,7 @@ class Food
     Vect2D pos;
     SDL_Renderer * renderer = nullptr;
     bool draw_allowed = true;
+    SDL_Rect view_port;
 };
 
 class Game
@@ -241,20 +243,21 @@ class Game
       int x_center = static_cast<int>((WIDTH - gameboard_x) / 2);
       int y_center = static_cast<int>((HEIGHT - gameboard_y) / 2);
 
-      view_port = {x_center, y_center, gameboard_x, gameboard_y};
+      game_area = {x_center, y_center, gameboard_x, gameboard_y};
+      info_area = {x_center, y_center - 20, gameboard_x, 20};
       game_render = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
       
-      SDL_RenderSetViewport(game_render, &view_port);
+      // SDL_RenderSetViewport(game_render, &game_area);
 
-      snake = new Snake(game_render);
-      food = new Food(game_render);
+      snake = new Snake(game_render, game_area);
+      food = new Food(game_render, game_area);
       score = 0;
       ticks = snake_time;
       move = {1,0};
       running = true;
 
-      normal_font = TTF_OpenFont("example/font.ttf", 24);
-      small_font = TTF_OpenFont("example/font.ttf", 14);
+      normal_font = TTF_OpenFont("../example/font.ttf", 24);
+      small_font = TTF_OpenFont("../example/font.ttf", 14);
       if (!normal_font || !small_font)
       {
         cout << "Error loading font: " << TTF_GetError() << endl;
@@ -265,8 +268,8 @@ class Game
     {
       delete(snake);
       delete(food);
-      snake = new Snake(game_render);
-      food = new Food(game_render);
+      snake = new Snake(game_render, game_area);
+      food = new Food(game_render, game_area);
       score = 0;
       move = {1,0};
       running = true;
@@ -300,6 +303,7 @@ class Game
 
       food->Draw();
       snake->Draw();
+      DrawInfo();
 
       if(!running)
       {
@@ -313,27 +317,28 @@ class Game
     {
       string text;
       SDL_Rect rect;
+      SDL_Rect render_rect;
+      SDL_GetRendererOutputSize(game_render, &render_rect.w, &render_rect.h);
 
       if(snake->GetSize() == (X_CELLS * Y_CELLS))
       {
         text = "Ganador!";
         TTF_SizeText(normal_font, text.c_str(), &rect.w, &rect.h);
-        rect.x = (view_port.w - rect.w) / 2;
-        rect.y = (view_port.h - rect.h) / 2;
+        rect.x = (render_rect.w - rect.w) / 2;
+        rect.y = (render_rect.h - rect.h) / 2;
       }
       else
       {
         text = "Perdedor!";
         TTF_SizeText(normal_font, text.c_str(), &rect.w, &rect.h);
-        rect.x = (view_port.w - rect.w) / 2;
-        rect.y = (view_port.h - rect.h) / 2;
+        rect.x = (render_rect.w - rect.w) / 2;
+        rect.y = (render_rect.h - rect.h) / 2;
       }
 
       renderText(text, rect, normal_font);
       rect.x -= 20;
       rect.y += 20;
-      renderText("(R) to reset, (Q) quit", rect, small_font);
-      
+      renderText("(R) reset, (Q) quit", rect, small_font);
     }
 
     void InputHandler(SDL_Keycode key)
@@ -364,7 +369,7 @@ class Game
     {
       if(snake->GetSize() >= (X_CELLS * Y_CELLS))
       {
-        food->SetDefault();
+        // food->SetDefault();
         GameOver();
       }
       else
@@ -378,7 +383,6 @@ class Game
           } while (snake->CheckPosInBody(food->GetPos()));
 
           score += 10;
-          cout << "score: " << score << endl;
         }
       }
     }
@@ -393,14 +397,6 @@ class Game
 
     void GameOver()
     {
-      if(snake->GetSize() == (X_CELLS * Y_CELLS))
-      {
-        cout << "you win" << endl;
-      }
-      else
-      {
-        cout << "you loose" << endl;
-      }
       running = false;
     }
 
@@ -413,15 +409,21 @@ class Game
       // draw grid
       SetColor(game_render, color_pallete[2]);
 
-      for(int i = 0; i <= static_cast<int>(view_port.w / GRID_SIZE); i++)
+      for(int i = 0; i <= static_cast<int>(game_area.w / GRID_SIZE); i++)
       {
-        SDL_RenderDrawLine(game_render, i * GRID_SIZE, 0, i * GRID_SIZE, view_port.h);
+        SDL_RenderDrawLine(game_render, game_area.x + i * GRID_SIZE, game_area.y, game_area.x + i * GRID_SIZE, game_area.y + game_area.h);
       }
 
-      for(int i = 0; i <= static_cast<int>(view_port.h / GRID_SIZE); i++)
+      for(int i = 0; i <= static_cast<int>(game_area.h / GRID_SIZE); i++)
       {
-        SDL_RenderDrawLine(game_render, 0, i * GRID_SIZE, view_port.w, i * GRID_SIZE);
+        SDL_RenderDrawLine(game_render, game_area.x, game_area.y + i * GRID_SIZE, game_area.x + game_area.w, game_area.y + i * GRID_SIZE);
       }
+    }
+
+    void DrawInfo()
+    {
+      string text = "Score: " + to_string(score);
+      renderText(text.c_str(), info_area, small_font);
     }
 
     void renderText(string text, SDL_Rect dest, TTF_Font * font)
@@ -447,7 +449,8 @@ class Game
     int ticks;
     int snake_time = 200;
     Vect2D move;
-    SDL_Rect view_port;
+    SDL_Rect game_area;
+    SDL_Rect info_area;
     bool running;
 
     TTF_Font * normal_font;
@@ -470,7 +473,7 @@ int main(int argc, char *argv[])
 	}
 
   SDL_Window *window = SDL_CreateWindow("Simple Snake Game", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WIDTH, HEIGHT, SDL_WINDOW_ALLOW_HIGHDPI);
-
+  
   if (NULL == window)
   {
     cout << "Could not create window: " << SDL_GetError() << endl;
